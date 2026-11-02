@@ -796,7 +796,7 @@ function viewSettings() {
       <button class="btn block" data-action="exportData">Export my data (backup)</button>
       <button class="btn block" data-action="importData">Import a backup</button>
     </div>
-    <p class="muted small center">Exercises and images: <a href="https://github.com/yuhonas/free-exercise-db" target="_blank" rel="noopener">free-exercise-db</a> (public domain).</p>
+    <p class="muted small center">Exercises and images: <a href="https://github.com/yuhonas/free-exercise-db" target="_blank" rel="noopener">free-exercise-db</a> (public domain). · <a href="privacy.html">Privacy policy</a></p>
   </section>`;
 }
 

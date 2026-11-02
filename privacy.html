@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gym Tracker – Privacy policy</title>
+  <link rel="icon" href="icons/icon-192.png">
+  <style>
+    :root { --bg: #f3f4f6; --surface: #fff; --text: #111418; --muted: #5b6270; --accent: #2563eb; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #0e1013; --surface: #171a1f; --text: #e8eaed; --muted: #9aa1ad; --accent: #4c8dff; }
+    }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
+    .card { background: var(--surface); border-radius: 14px; padding: 20px; }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    h2 { font-size: 17px; margin: 24px 0 6px; }
+    p, li { margin: 6px 0; }
+    .muted { color: var(--muted); font-size: 14px; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="card">
+      <h1>Privacy policy</h1>
+      <p class="muted">Gym Tracker · last updated 2 November 2026</p>
+
+      <p>Gym Tracker is a personal workout log. It has no server and no account of its own: it runs entirely in your browser.</p>
+
+      <h2>What the app stores</h2>
+      <p>The workouts, programs, favorites and settings you enter. Nothing else — no location, contacts, analytics or advertising identifiers.</p>
+
+      <h2>Where it is stored</h2>
+      <ul>
+        <li><strong>On your device</strong>, in the browser's local storage.</li>
+        <li><strong>In your own Google Drive</strong>, if you choose to connect it: a single file named “Gym Tracker data.json”, used to sync your devices.</li>
+      </ul>
+
+      <h2>Google data</h2>
+      <p>When you connect Google Drive, the app asks for the <code>drive.file</code> permission only. It can read and write the files it created itself, and cannot see any other file in your Drive. It also reads your email address to show which account is connected.</p>
+      <p>This data goes directly between your device and Google. It is never sent to the developer or to any third party, and it is not used for advertising or any purpose other than syncing your workouts.</p>
+      <p>Gym Tracker's use of information received from Google APIs adheres to the
+        <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+
+      <h2>Removing your data</h2>
+      <ul>
+        <li>In the app, <em>Settings → Sync → Disconnect</em> stops syncing and revokes the app's access.</li>
+        <li>Delete “Gym Tracker data.json” from your Drive to remove the synced copy.</li>
+        <li>You can also remove access at any time from your <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">Google account permissions</a>.</li>
+      </ul>
+
+      <h2>Contact</h2>
+      <p>Questions: <a href="https://github.com/soutems" target="_blank" rel="noopener">github.com/soutems</a>.</p>
+
+      <p class="muted" style="margin-top:24px"><a href="./">← Back to Gym Tracker</a></p>
+    </div>
+  </main>
+</body>
+</html>
