@@ -1,7 +1,7 @@
 // Offline support: the app files are served from the cache and refreshed in the
 // background (a new version shows up on the next launch). Exercise images are
 // cached the first time they are seen.
-const APP_CACHE = 'gym-app-v2';
+const APP_CACHE = 'gym-app-v3';
 const IMG_CACHE = 'gym-img-v1';
 const APP_FILES = [
   './', 'index.html', 'styles.css', 'sync.js', 'app.js', 'exercises.js',

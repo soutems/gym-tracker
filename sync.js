@@ -165,7 +165,12 @@ async function drive(path, opts = {}) {
     headers: Object.assign({ Authorization: 'Bearer ' + authInfo().token }, opts.headers),
   }));
   if (res.status === 401) { setAuth({ token: null }); throw new Error('signin'); }
-  if (!res.ok) throw new Error('Drive error ' + res.status);
+  if (!res.ok) {
+    // Google explains the problem in the body (e.g. the Drive API is not enabled)
+    let reason = '';
+    try { const err = (await res.json()).error || {}; reason = (err.errors && err.errors[0] && err.errors[0].reason) || err.status || ''; } catch (e) {}
+    throw new Error('Drive error ' + res.status + (reason ? ' (' + reason + ')' : ''));
+  }
   return res;
 }
 
