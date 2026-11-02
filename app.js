@@ -74,6 +74,8 @@ const defaultState = () => ({
   templates: [],          // { id, name, items: [{ exId, sets, target, rest }] }
   sessions: [],           // finished workouts, oldest first
   active: null,           // workout in progress
+  deleted: {},            // { [id]: time } so deletions reach the other devices (see sync.js)
+  syncMeta: {},           // { favorites | exerciseSettings | settings: last edit time }
 });
 
 let state = loadState();
@@ -99,11 +101,13 @@ function save() {
 }
 function saveNow() {
   clearTimeout(saveTimer);
+  const changed = stampChanges();
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
     toast('Could not save on this device');
   }
+  syncOnSave(changed);
 }
 window.addEventListener('pagehide', saveNow);
 document.addEventListener('visibilitychange', () => {
@@ -785,11 +789,12 @@ function viewSettings() {
     <div class="card">
       <div class="hist-top"><span>Default rest time</span><button class="btn small" data-action="defaultRest">${fmtTime(state.settings.defaultRest)}</button></div>
     </div>
+    <h2 class="section-title">Sync</h2>
+    ${syncCardHtml()}
     <h2 class="section-title">Data</h2>
     <div class="card stack">
       <button class="btn block" data-action="exportData">Export my data (backup)</button>
       <button class="btn block" data-action="importData">Import a backup</button>
-      <p class="muted small">Your data is currently stored on this device. Google Drive sync is the next step.</p>
     </div>
     <p class="muted small center">Exercises and images: <a href="https://github.com/yuhonas/free-exercise-db" target="_blank" rel="noopener">free-exercise-db</a> (public domain).</p>
   </section>`;
@@ -1686,6 +1691,18 @@ const actions = {
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   },
   importData() { document.getElementById('importFile').click(); },
+  driveConnect() { googleSignIn(false); },
+  driveSync() { syncNow(); },
+  driveDisconnect() {
+    confirmBox('Disconnect Google Drive?', 'Your data stays on this phone and in your Drive. This phone simply stops syncing.', 'Disconnect', () => {
+      const token = authInfo().token;
+      if (token) fetch('https://oauth2.googleapis.com/revoke?token=' + encodeURIComponent(token), { method: 'POST' }).catch(() => {});
+      localStorage.removeItem(AUTH_KEY);
+      sync.dirty = false;
+      setSyncStatus('off');
+      render();
+    }, true);
+  },
 };
 
 document.addEventListener('click', ev => {
@@ -1853,3 +1870,4 @@ applyTheme();
 rebuildLibrary();
 render();
 setInterval(tick, 250);
+syncInit();
