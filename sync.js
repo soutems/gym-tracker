@@ -150,6 +150,11 @@ function readAuthRedirect() {
   history.replaceState(null, '', appUrl());
   const a = authInfo();
   if (p.get('state') !== a.nonce) return null;
+  // Google lets the user untick the Drive box on the consent screen
+  if (p.get('access_token') && p.get('scope') && !p.get('scope').split(' ').includes(DRIVE_SCOPE)) {
+    setAuth({ nonce: null });
+    return 'noscope';
+  }
   if (p.get('access_token')) {
     setAuth({ token: p.get('access_token'), exp: Date.now() + (+p.get('expires_in') || 3600) * 1000, connected: true, nonce: null });
     return 'ok';
@@ -169,6 +174,10 @@ async function drive(path, opts = {}) {
     // Google explains the problem in the body (e.g. the Drive API is not enabled)
     let reason = '';
     try { const err = (await res.json()).error || {}; reason = (err.errors && err.errors[0] && err.errors[0].reason) || err.status || ''; } catch (e) {}
+    if (reason === 'insufficientPermissions') {
+      setAuth({ token: null });
+      throw new Error('signin');
+    }
     throw new Error('Drive error ' + res.status + (reason ? ' (' + reason + ')' : ''));
   }
   return res;
@@ -304,6 +313,8 @@ function syncInit() {
   if (result === 'ok') {
     fetchEmail().then(() => setSyncStatus(sync.status));
     toast('Connected to Google Drive');
+  } else if (result === 'noscope') {
+    toast('Drive access not allowed: tick the Google Drive box when signing in');
   } else if (result) {
     // Silent sign-in refused (signed out of Google, consent removed…): ask the user
     setSyncStatus('signin');
