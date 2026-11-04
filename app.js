@@ -29,6 +29,12 @@ const EQUIP_LABEL = {
   bands: 'Bands', 'medicine ball': 'Medicine ball', 'exercise ball': 'Exercise ball',
   'e-z curl bar': 'EZ bar',
 };
+// Equipment filter chips; anything not listed falls under "Other"
+const EQUIP_FILTERS = [
+  ['barbell', 'Barbell'], ['dumbbell', 'Dumbbell'], ['e-z curl bar', 'EZ bar'], ['machine', 'Machine'],
+  ['cable', 'Cable'], ['kettlebells', 'Kettlebell'], ['body only', 'Bodyweight'], ['bands', 'Bands'], ['other', 'Other'],
+];
+const equipKey = eq => EQUIP_FILTERS.some(([k]) => k === eq) ? eq : 'other';
 const REST_CHOICES = [0, 30, 45, 60, 75, 90, 120, 150, 180, 240, 300];
 
 // Theme presets — colors live in styles.css under [data-theme="…"]
@@ -41,6 +47,14 @@ const THEMES = [
   { id: 'ember', name: 'Ember', bg: '#140f0c', surface: '#211913', accent: '#f97316' },
   { id: 'forest', name: 'Forest', bg: '#0b1310', surface: '#13201a', accent: '#34d399' },
   { id: 'sakura', name: 'Sakura', bg: '#fdf2f4', surface: '#ffffff', accent: '#e11d48' },
+];
+// Visual styles — shapes and surfaces, combined with any theme (styles.css under [data-style="…"])
+const STYLES = [
+  { id: 'classic', name: 'Classic', note: 'Solid cards' },
+  { id: 'glass', name: 'Glass', note: 'Translucent, rounded' },
+  { id: 'soft', name: 'Soft', note: 'Moulded relief' },
+  { id: 'bento', name: 'Bento', note: 'Tiles and live stats' },
+  { id: 'minimal', name: 'Minimal', note: 'Thin lines, mono digits' },
 ];
 const ACCENTS = ['#4c8dff', '#38bdf8', '#14b8a6', '#22c55e', '#84cc16', '#eab308', '#f97316', '#ef4444', '#ec4899', '#a855f7'];
 
@@ -120,6 +134,7 @@ const ui = {
   draft: null,          // copy of a finished workout being edited (or a past workout being logged)
   libQuery: '',
   libGroup: null,       // a group key, 'fav', or null for all
+  libEquip: null,       // an EQUIP_FILTERS key, or null for all
   libLimit: LIST_PAGE,
   modals: [],
   restDoneUntil: 0,
@@ -146,6 +161,7 @@ function applyTheme() {
   const root = document.documentElement;
   const t = state.settings.theme || 'auto';
   root.dataset.theme = t === 'auto' ? (lightQuery.matches ? 'daylight' : 'midnight') : t;
+  root.dataset.style = state.settings.style || 'classic';
   const acc = state.settings.accent;
   if (acc) {
     root.style.setProperty('--accent', acc);
@@ -173,7 +189,7 @@ function rebuildLibrary() {
   LIB = new Map();
   for (const c of state.customExercises) {
     LIB.set(c.id, {
-      id: c.id, name: c.name, group: c.group, primary: [], secondary: [], equipment: '',
+      id: c.id, name: c.name, group: c.group, primary: [], secondary: [], equipment: c.equipment || '',
       instructions: c.instructions ? [c.instructions] : [], images: [], defaultMode: c.mode, custom: true,
     });
   }
@@ -200,11 +216,12 @@ const exMode = id => (state.exerciseSettings[id] && state.exerciseSettings[id].m
 const exSetting = id => (state.exerciseSettings[id] = state.exerciseSettings[id] || {});
 const isFav = id => state.favorites.includes(id);
 
-function filterExercises(query, group) {
+function filterExercises(query, group, equip) {
   const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
   const out = [];
   for (const ex of LIB.values()) {
     if (group === 'fav' ? !isFav(ex.id) : group && ex.group !== group) continue;
+    if (equip && equipKey(ex.equipment) !== equip) continue;
     const name = ex.name.toLowerCase();
     if (tokens.every(t => name.includes(t))) out.push(ex);
   }
@@ -487,7 +504,16 @@ function viewWorkout() {
   }
 
   const done = a.exercises.reduce((n, e) => n + e.sets.filter(s => s.done).length, 0);
+  const total = a.exercises.reduce((n, e) => n + e.sets.length, 0);
+  const volume = a.exercises.reduce((n, e) => n + e.sets.reduce((v, s) => v + (s.done && s.w && s.r ? s.w * s.r : 0), 0), 0);
   const prs = livePRs(a);
+  // Live stat tiles, only shown by the Bento style
+  const tiles = `<div class="bento-tiles">
+      <div class="bt bt-time"><small>Elapsed</small><strong data-elapsed>0:00</strong></div>
+      <div class="bt bt-a"><small>Sets</small><strong>${done}/${total}</strong></div>
+      <div class="bt bt-b"><small>Volume</small><strong>${fmtBig(volume)}<small> kg</small></strong></div>
+      <div class="bt bt-c"><small>Records</small><strong>${prs.size}</strong></div>
+    </div>`;
   return `<section class="stack">
     <div class="card session-head">
       <div>
@@ -497,6 +523,7 @@ function viewWorkout() {
       </div>
       <button class="btn primary" data-action="finishSession">Finish</button>
     </div>
+    ${tiles}
     ${a.exercises.map((e, i) => exerciseCard(e, i, prs)).join('') || '<p class="muted center">Add a first exercise to get started.</p>'}
     <button class="btn block" data-action="addToSession">+ Add exercises</button>
     <button class="btn danger-text block" data-action="cancelSession">Discard workout</button>
@@ -629,10 +656,18 @@ function groupChips(active, action) {
   </div>`;
 }
 
+function equipChips(active, action) {
+  return `<div class="chips sub">
+    <button class="chip ${!active ? 'active' : ''}" data-action="${action}" data-e="">All equipment</button>
+    ${EQUIP_FILTERS.map(([k, l]) => `<button class="chip ${active === k ? 'active' : ''}" data-action="${action}" data-e="${k}">${l}</button>`).join('')}
+  </div>`;
+}
+
 function viewLibrary() {
   return `<section class="stack">
     <input type="search" class="in left" id="libSearch" placeholder="Search: bench, squat, curl…" value="${esc(ui.libQuery)}" autocomplete="off">
     ${groupChips(ui.libGroup, 'libGroup')}
+    ${equipChips(ui.libEquip, 'libEquip')}
     <div id="libList"></div>
     <button class="btn block" data-action="newCustomExercise">+ Create a custom exercise</button>
   </section>`;
@@ -668,7 +703,7 @@ function exerciseRows(items, limit, opts = {}) {
 
 function renderLibList() {
   const el = document.getElementById('libList');
-  if (el) el.innerHTML = exerciseRows(filterExercises(ui.libQuery, ui.libGroup), ui.libLimit, { group: ui.libGroup, query: ui.libQuery });
+  if (el) el.innerHTML = exerciseRows(filterExercises(ui.libQuery, ui.libGroup, ui.libEquip), ui.libLimit, { group: ui.libGroup, query: ui.libQuery });
 }
 
 /* ----- History tab ----- */
@@ -777,7 +812,19 @@ function viewSettings() {
   const swatches = `
     <button class="swatch default ${!acc ? 'active' : ''}" data-action="setAccent" data-c="" aria-label="Theme default">A</button>
     ${ACCENTS.map(c => `<button class="swatch ${acc === c ? 'active' : ''}" data-action="setAccent" data-c="${c}" style="background:${c}" aria-label="Accent ${c}"></button>`).join('')}`;
+  const curStyle = state.settings.style || 'classic';
+  const styles = STYLES.map(s => `
+    <button class="theme-card ${curStyle === s.id ? 'active' : ''}" data-action="setStyle" data-id="${s.id}" aria-pressed="${curStyle === s.id}">
+      <span class="theme-preview style-preview ${s.id}">
+        <span class="theme-bar"></span>
+        <span class="theme-dot"></span>
+      </span>
+      <span class="theme-name">${s.name}</span>
+      <span class="muted tiny">${s.note}</span>
+    </button>`).join('');
   return `<section class="stack">
+    <h2 class="section-title">Style</h2>
+    <div class="theme-grid">${styles}</div>
     <h2 class="section-title">Theme</h2>
     <div class="theme-grid">${themes}</div>
     <h2 class="section-title">Accent color</h2>
@@ -967,7 +1014,7 @@ const MODALS = {
     return `<div class="sheet tall">
       <div class="sheet-head"><h2>Add exercises</h2>${closeBtn}</div>
       <input type="search" class="in left" id="pickSearch" placeholder="Search…" value="${esc(m.query)}" autocomplete="off">
-      <div style="margin:10px 0">${groupChips(m.group, 'pickGroup')}</div>
+      <div class="stack-tight" style="margin:10px 0">${groupChips(m.group, 'pickGroup')}${equipChips(m.equip, 'pickEquip')}</div>
       <div class="sheet-body" id="pickList"></div>
       <div class="sheet-foot"><button class="btn primary block" id="pickDone" data-action="pickDone"></button></div>
     </div>`;
@@ -1028,6 +1075,9 @@ const MODALS = {
         <label class="field"><span>Name</span><input class="in left" id="cxName" placeholder="e.g. Smith machine bench press"></label>
         <label class="field"><span>Muscle group</span>
           <select class="in left" id="cxGroup">${GROUPS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
+        </label>
+        <label class="field"><span>Equipment</span>
+          <select class="in left" id="cxEquip">${EQUIP_FILTERS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
         </label>
         <label class="field"><span>Track by</span>
           <select class="in left" id="cxMode"><option value="reps">Weight × reps</option><option value="time">Duration</option></select>
@@ -1096,7 +1146,7 @@ function renderPickList() {
   const m = topModal();
   if (!m || m.type !== 'picker') return;
   const list = document.getElementById('pickList');
-  if (list) list.innerHTML = exerciseRows(filterExercises(m.query, m.group), m.limit, { pick: true, selected: m.selected, group: m.group, query: m.query });
+  if (list) list.innerHTML = exerciseRows(filterExercises(m.query, m.group, m.equip), m.limit, { pick: true, selected: m.selected, group: m.group, query: m.query });
   updatePickButton();
 }
 function updatePickButton() {
@@ -1452,6 +1502,7 @@ const actions = {
 
   // Library
   libGroup(d) { ui.libGroup = d.g || null; ui.libLimit = LIST_PAGE; render(); },
+  libEquip(d) { ui.libEquip = d.e || null; ui.libLimit = LIST_PAGE; render(); },
   libMore() { ui.libLimit += LIST_PAGE; renderLibList(); },
   showExercise(d) { openModal({ type: 'exercise', id: d.id }); },
   toggleFav(d) {
@@ -1495,6 +1546,7 @@ const actions = {
     state.customExercises.push({
       id: 'c_' + uid(), name,
       group: document.getElementById('cxGroup').value,
+      equipment: document.getElementById('cxEquip').value,
       mode: document.getElementById('cxMode').value,
       instructions: document.getElementById('cxText').value.trim(),
     });
@@ -1519,6 +1571,12 @@ const actions = {
   pickGroup(d) {
     const m = topModal();
     m.group = d.g || null;
+    m.limit = LIST_PAGE;
+    renderModal();
+  },
+  pickEquip(d) {
+    const m = topModal();
+    m.equip = d.e || null;
     m.limit = LIST_PAGE;
     renderModal();
   },
@@ -1666,6 +1724,12 @@ const actions = {
   // Settings
   setTheme(d) {
     state.settings.theme = d.id;
+    applyTheme();
+    save();
+    render();
+  },
+  setStyle(d) {
+    state.settings.style = d.id;
     applyTheme();
     save();
     render();
