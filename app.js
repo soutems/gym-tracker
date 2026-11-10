@@ -1860,6 +1860,28 @@ document.getElementById('importFile').addEventListener('change', async ev => {
   if (!file) return;
   try {
     const data = JSON.parse(await file.text());
+    // History from another app: added to the current data, nothing is replaced
+    if (data.kind === 'gym-tracker-history' && Array.isArray(data.sessions)) {
+      const have = new Set(state.sessions.map(s => s.id));
+      const fresh = data.sessions.filter(s => !have.has(s.id));
+      if (!fresh.length) { toast('These workouts are already in your history'); return; }
+      confirmBox(`Add ${plural(fresh.length, 'workout')}${data.source ? ` from ${esc(data.source)}` : ''}?`,
+        'They are added to your history. Your current workouts and programs are kept.',
+        'Add to history', () => {
+          const known = new Set(state.customExercises.map(c => c.id));
+          (data.customExercises || []).forEach(c => { if (!known.has(c.id)) state.customExercises.push(c); });
+          Object.entries(data.exerciseSettings || {}).forEach(([id, v]) => {
+            if (!state.exerciseSettings[id]) state.exerciseSettings[id] = v;
+          });
+          fresh.forEach(s => { if (state.deleted) delete state.deleted[s.id]; state.sessions.push(s); });
+          rebuildLibrary();
+          sortSessions();
+          saveNow();
+          render();
+          toast(`${plural(fresh.length, 'workout')} added`);
+        });
+      return;
+    }
     if (!Array.isArray(data.sessions) || !Array.isArray(data.templates)) throw new Error('format');
     confirmBox('Import this backup?',
       `${plural(data.sessions.length, 'workout')} and ${plural(data.templates.length, 'program')}. Your current data will be replaced.`,
