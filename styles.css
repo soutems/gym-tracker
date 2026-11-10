@@ -134,6 +134,9 @@ h2, h3 { margin: 0; }
 .sync-state[data-state="syncing"], .sync-state[data-state="offline"] { color: var(--muted); }
 .sync-state[data-state="signin"], .sync-state[data-state="error"] { color: var(--danger); }
 
+/* Every tab fills the screen, however short its content */
+html { min-height: 100%; }
+body { min-height: 100vh; min-height: 100dvh; }
 main { max-width: 560px; margin: 0 auto; padding: 16px; }
 .stack > * + * { margin-top: 12px; }
 
@@ -365,14 +368,25 @@ textarea.in { min-height: 110px; resize: vertical; }
 .sheet {
   position: absolute; left: 0; right: 0; bottom: 0;
   max-width: 560px; margin: 0 auto;
-  max-height: 92vh; overflow: auto;
+  /* Stays clear of the status bar / notch (the app draws under it) */
+  --sheet-max: calc(100vh - env(safe-area-inset-top) - 16px);
+  max-height: var(--sheet-max); overflow: auto;
   background: var(--surface);
   border-radius: 18px 18px 0 0;
-  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  padding: 0 16px calc(16px + env(safe-area-inset-bottom));
 }
-.sheet.tall { height: 92vh; display: flex; flex-direction: column; overflow: hidden; }
+@supports (height: 100dvh) {
+  .sheet { --sheet-max: calc(100dvh - env(safe-area-inset-top) - 16px); }
+}
+.sheet.tall { height: var(--sheet-max); display: flex; flex-direction: column; overflow: hidden; }
 .sheet.tall .sheet-body { flex: 1; overflow: auto; margin: 0 -16px; padding: 0 16px; }
-.sheet-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+/* The header (title, star, close) stays visible while the sheet scrolls */
+.sheet-head {
+  display: flex; align-items: center; gap: 8px;
+  position: sticky; top: 0; z-index: 2;
+  background: var(--surface);
+  margin: 0 -16px 12px; padding: 16px 16px 8px;
+}
 .sheet-head h2 { flex: 1; font-size: 19px; }
 .sheet-foot { padding-top: 12px; }
 .sheet-opts > * + * { margin-top: 8px; }
@@ -534,6 +548,7 @@ html[data-style="glass"][data-theme="sakura"] {
   border-radius: 28px 28px 0 0;
   border-top: 1px solid var(--border);
 }
+[data-style="glass"] .sheet-head { background: var(--sheet); }
 [data-style="glass"] .backdrop { background: rgba(0, 0, 0, 0.35); }
 [data-style="glass"] .btn { border-radius: 999px; }
 [data-style="glass"] .btn.primary { box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 40%, transparent); }

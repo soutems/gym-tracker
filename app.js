@@ -271,8 +271,10 @@ function parseIntOrNull(str) {
 const fmtW = n => String(Math.round(n * 100) / 100);
 const fmtBig = n => Math.round(n).toLocaleString('en-GB');
 
-const fmtDate = ts => new Date(ts).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-const fmtDateShort = ts => new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+const fmtDate = ts => new Date(ts).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+// Chart axis labels: the year only when it is not the current one
+const fmtDateShort = ts => new Date(ts).toLocaleDateString('en-GB', new Date(ts).getFullYear() === new Date().getFullYear()
+  ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: '2-digit' });
 const fmtDateLong = ts => new Date(ts).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
 const fmtClock = ts => new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
