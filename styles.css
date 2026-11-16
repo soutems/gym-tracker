@@ -460,6 +460,15 @@ textarea.in { min-height: 110px; resize: vertical; }
 .records ul { margin: 6px 0 0; padding-left: 18px; }
 .records li + li { margin-top: 4px; }
 
+/* Coach */
+.coach { display: flex; flex-direction: column; gap: 12px; }
+.coach-item { display: flex; gap: 10px; align-items: flex-start; padding-left: 10px; border-left: 3px solid var(--accent); }
+.coach-item.warn { border-left-color: var(--star); }
+.coach-item.good { border-left-color: var(--ok); }
+.coach-icon { font-size: 20px; line-height: 1.2; }
+.coach-title { font-weight: 600; }
+.coach .link { align-self: flex-start; }
+
 /* Settings */
 .theme-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .theme-card {

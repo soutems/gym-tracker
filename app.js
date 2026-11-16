@@ -135,6 +135,7 @@ const ui = {
   libQuery: '',
   libGroup: null,       // a group key, 'fav', or null for all
   libEquip: null,       // an EQUIP_FILTERS key, or null for all
+  coachAll: false,      // coach card expanded
   libLimit: LIST_PAGE,
   modals: [],
   restDoneUntil: 0,
@@ -499,6 +500,8 @@ function viewWorkout() {
     const last = state.sessions[state.sessions.length - 1];
     return `<section class="stack">
       <button class="btn primary big block" data-action="startEmpty">Start an empty workout</button>
+      <h2 class="section-title">Coach</h2>
+      ${coachCard()}
       <h2 class="section-title">My programs</h2>
       ${tpls || emptyPrograms()}
       ${last ? `<h2 class="section-title">Last workout</h2>${historyCard(last)}` : ''}
@@ -1504,6 +1507,7 @@ const actions = {
 
   // Library
   libGroup(d) { ui.libGroup = d.g || null; ui.libLimit = LIST_PAGE; render(); },
+  coachToggle() { ui.coachAll = !ui.coachAll; render(); },
   libEquip(d) { ui.libEquip = d.e || null; ui.libLimit = LIST_PAGE; render(); },
   libMore() { ui.libLimit += LIST_PAGE; renderLibList(); },
   showExercise(d) { openModal({ type: 'exercise', id: d.id }); },
