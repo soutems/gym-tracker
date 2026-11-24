@@ -10,7 +10,7 @@ const STORAGE_KEY = 'muscu-tracker:v1';
 const LIST_PAGE = 60;
 
 // Shown at the bottom of Settings; bump it with APP_CACHE in sw.js on every release
-const APP_VERSION = '1.11.1';
+const APP_VERSION = '1.12.0';
 
 const GROUPS = [
   ['chest', 'Chest'], ['back', 'Back'], ['shoulders', 'Shoulders'], ['biceps', 'Biceps'],
@@ -960,28 +960,29 @@ function delta(cur, prev) {
 
 /* ---------- Muscle map (post-workout) ---------- */
 
-// Body outline (viewBox 0 0 80 170), then muscles as ellipses on top: [group, cx, cy, rx, ry, rotation]
-const BODY_OUTLINE = `<circle cx="40" cy="11" r="8.5"/>
-  <path d="M36 19h8v4c7 1 15 3 18 8 3 4 3 9 4 14l2 14c1 6 3 12 3 19 0 2-4 2-4 0l-4-17-3-12c-1 5-1 10 0 15
-    1 4 2 9 2 15 0 13-2 26-2 38 0 9-1 18-2 26h-7l-1-28-2-27h-2l-2 27-1 28h-7c-1-8-2-17-2-26 0-12-2-25-2-38
-    0-6 1-11 2-15 1-5 1-10 0-15l-3 12-4 17c0 2-4 2-4 0 0-7 2-13 3-19l2-14c1-5 1-10 4-14 3-5 11-7 18-8z"/>`;
+// Anatomical muscle shapes, each figure 90 wide and centred on x = 45: [group, path, mirrored].
+// Mirrored shapes are drawn for the left side and flipped for the right, so both sides always match.
+const DELTOID = 'M27 32c0-6 5-9 10-8l-3 12c-4 1-7-1-7-4z';
+const UPPER_ARM = 'M26 38c3 0 5 4 4 10l-2 8c-3 0-5-4-4-10z';
+const FOREARM = 'M24 58c2 0 3 1 3 3l-1.5 15c-.3 2-3 2-3.2 0L22 61c0-2 1-3 2-3z';
 const BODY_FRONT = [
-  ['shoulders', 23.5, 30, 5.5, 6.5, -20], ['shoulders', 56.5, 30, 5.5, 6.5, 20],
-  ['chest', 33.5, 35, 7, 5.5, 0], ['chest', 46.5, 35, 7, 5.5, 0],
-  ['biceps', 17.5, 45, 3.6, 8, 15], ['biceps', 62.5, 45, 3.6, 8, -15],
-  ['forearms', 13.5, 63, 3.2, 9, 15], ['forearms', 66.5, 63, 3.2, 9, -15],
-  ['abs', 40, 55, 6.5, 13, 0],
-  ['quads', 33.5, 97, 6, 17, 4], ['quads', 46.5, 97, 6, 17, -4],
-  ['calves', 32.5, 135, 3.8, 11, 0], ['calves', 47.5, 135, 3.8, 11, 0],
+  ['shoulders', DELTOID, true],
+  ['chest', 'M37 26c5-2 7 0 7 3v11c-4 2-9 1-11-2-1-5 0-10 4-12z', true],
+  ['biceps', UPPER_ARM, true],
+  ['forearms', FOREARM, true],
+  ['abs', 'M39 44h5.2v6H39zM39 51.5h5.2v6H39zM39 59h5.2v7H39z', true],
+  ['quads', 'M34 80c3-2 9-1 10 2l-1 26c-1 4-6 5-8 2-3-8-4-20-1-30z', true],
+  ['calves', 'M35 122c2-1 6-1 7 1l-1 20c-1 3-4 3-5 0-2-6-2-15-1-21z', true],
 ];
 const BODY_BACK = [
-  ['shoulders', 23.5, 30, 5.5, 6.5, -20], ['shoulders', 56.5, 30, 5.5, 6.5, 20],
-  ['back', 40, 44, 12.5, 18, 0],
-  ['triceps', 17.5, 45, 3.6, 8, 15], ['triceps', 62.5, 45, 3.6, 8, -15],
-  ['forearms', 13.5, 63, 3.2, 9, 15], ['forearms', 66.5, 63, 3.2, 9, -15],
-  ['glutes', 34, 80, 6.5, 6.5, 0], ['glutes', 46, 80, 6.5, 6.5, 0],
-  ['hamstrings', 33.5, 103, 5.5, 13, 4], ['hamstrings', 46.5, 103, 5.5, 13, -4],
-  ['calves', 32.5, 134, 4.2, 11, 0], ['calves', 47.5, 134, 4.2, 11, 0],
+  ['back', 'M45 20l9 6-9 6-9-6z', false],
+  ['shoulders', DELTOID, true],
+  ['back', 'M36 30l8 4v24l-6-4c-3-8-4-16-2-24z', true],
+  ['triceps', UPPER_ARM, true],
+  ['forearms', FOREARM, true],
+  ['glutes', 'M34 70c4-2 10 0 10 4v10c-4 3-10 2-11-1-1-5-1-10 1-13z', true],
+  ['hamstrings', 'M34 90c3-1 8 0 9 2l-1 20c-1 3-5 4-7 1-2-7-3-15-1-23z', true],
+  ['calves', 'M35 120c2-1 6-1 7 1v16c-1 4-5 4-6 1-2-6-2-12-1-18z', true],
 ];
 
 function setsPerGroup(s) {
@@ -1008,17 +1009,19 @@ function workoutKind(per) {
   return 'Full body';
 }
 
-function bodySvg(regions, per, label) {
-  // Darker for more sets: a light touch, solid work, a big focus
+// One figure: resting muscles as faint outlines, worked ones glowing with fibres (brighter for more sets)
+function bodyFigure(regions, per, dx) {
   const level = n => (!n ? 0 : n <= 3 ? 1 : n <= 7 ? 2 : 3);
-  return `<figure class="body-view">
-    <svg viewBox="0 0 80 170" role="img" aria-label="${label}">
-      <g class="body-outline">${BODY_OUTLINE}</g>
-      ${regions.map(([g, cx, cy, rx, ry, rot]) =>
-        `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" transform="rotate(${rot} ${cx} ${cy})" class="body-part lv${level(per[g])}"/>`).join('')}
-    </svg>
-    <figcaption class="muted tiny">${label}</figcaption>
-  </figure>`;
+  const part = (g, d, flip) => {
+    const lv = level(per[g]);
+    // Pattern and filter as attributes: url(#…) inside an external stylesheet is not resolved the same everywhere
+    const look = lv ? `class="mm-lv${lv}" fill="url(#mm-fibres)" filter="url(#mm-glow)"` : 'class="mm-off"';
+    return `<path d="${d}" ${look}${flip ? ' transform="translate(90 0) scale(-1 1)"' : ''}/>`;
+  };
+  return `<g transform="translate(${dx} 0)">
+    <circle cx="45" cy="11" r="7" class="mm-off"/>
+    ${regions.map(([g, d, mirrored]) => part(g, d, false) + (mirrored ? part(g, d, true) : '')).join('')}
+  </g>`;
 }
 
 function muscleMapHtml(s, justFinished) {
@@ -1026,8 +1029,21 @@ function muscleMapHtml(s, justFinished) {
   const worked = GROUPS.filter(([g]) => per[g]).sort((a, b) => per[b[0]] - per[a[0]]);
   return `<div class="muscle-map">
     <div class="muscle-title">${workoutKind(per)}${justFinished ? ' done 💪' : ''}</div>
-    <div class="muscle-sub muted small">${worked.slice(0, 4).map(([, l]) => l).join(' · ')}</div>
-    <div class="body-pair">${bodySvg(BODY_FRONT, per, 'Front')}${bodySvg(BODY_BACK, per, 'Back')}</div>
+    <div class="muscle-sub">${worked.slice(0, 4).map(([, l]) => l).join(' · ')}</div>
+    <svg class="mm-svg" viewBox="0 0 180 162" role="img" aria-label="Muscles worked: ${worked.map(([, l]) => l).join(', ')}">
+      <defs>
+        <filter id="mm-glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="2.2" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <pattern id="mm-fibres" width="2.4" height="2.4" patternUnits="userSpaceOnUse" patternTransform="rotate(70)">
+          <rect width="2.4" height="2.4" class="mm-fibre-bg"/>
+          <line x1="0" y1="0" x2="0" y2="2.4" class="mm-fibre"/>
+        </pattern>
+      </defs>
+      ${bodyFigure(BODY_FRONT, per, 0)}${bodyFigure(BODY_BACK, per, 90)}
+      <text x="45" y="158" class="mm-label">Front</text><text x="135" y="158" class="mm-label">Back</text>
+    </svg>
     <div class="chips wrap muscle-chips">${worked.map(([g, l]) =>
       `<span class="chip static">${l} <b>${per[g]}</b></span>`).join('')}</div>
   </div>`;

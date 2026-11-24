@@ -461,18 +461,23 @@ textarea.in { min-height: 110px; resize: vertical; }
 .records li + li { margin-top: 4px; }
 
 /* Muscle map (post-workout) */
-.muscle-map { text-align: center; }
+/* Neon style: always a dark stage, whatever the theme, so the glow shows */
+.muscle-map {
+  text-align: center; color: #eef2fa;
+  background: #05070c; border-radius: 20px; padding: 16px 12px 14px;
+}
 .muscle-title { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; }
-.body-pair { display: flex; justify-content: center; gap: 18px; margin: 12px 0 6px; }
-.body-view { margin: 0; }
-.body-view svg { width: 112px; height: auto; display: block; }
-.body-outline { fill: color-mix(in srgb, var(--text) 12%, var(--surface)); }
-.body-part { fill: color-mix(in srgb, var(--text) 22%, var(--surface)); }
-.body-part.lv1 { fill: color-mix(in srgb, var(--accent) 45%, var(--surface)); }
-.body-part.lv2 { fill: color-mix(in srgb, var(--accent) 75%, var(--surface)); }
-.body-part.lv3 { fill: var(--accent); }
+.muscle-sub { font-size: 14px; color: #8d97aa; }
+.mm-svg { display: block; width: 100%; max-width: 300px; height: auto; margin: 8px auto 4px; overflow: visible; }
+.mm-off { fill: none; stroke: color-mix(in srgb, var(--accent) 28%, #0b1220); stroke-width: 0.9; }
+.mm-lv1 { fill-opacity: 0.55; }
+.mm-lv2 { fill-opacity: 0.8; }
+.mm-fibre-bg { fill: var(--accent); }
+.mm-fibre { stroke: color-mix(in srgb, var(--accent) 35%, #ffffff); stroke-width: 0.6; }
+.mm-label { fill: #5b6b86; font-size: 9px; text-anchor: middle; font-family: inherit; }
 .muscle-chips { justify-content: center; }
-.muscle-chips b { margin-left: 2px; }
+.muscle-chips .chip.static { background: rgba(255, 255, 255, 0.07); border-color: transparent; color: #dfe6f3; }
+.muscle-chips b { margin-left: 2px; color: color-mix(in srgb, var(--accent) 60%, #ffffff); }
 
 /* Ask your AI */
 .ai-choices { display: flex; flex-direction: column; gap: 8px; }

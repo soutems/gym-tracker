@@ -2,7 +2,7 @@
 // background (a new version shows up on the next launch). Exercise images are
 // cached the first time they are seen.
 // Same number as APP_VERSION in app.js
-const APP_CACHE = 'gym-app-1.11.1';
+const APP_CACHE = 'gym-app-1.12.0';
 const IMG_CACHE = 'gym-img-v1';
 const APP_FILES = [
   './', 'index.html', 'styles.css', 'sync.js', 'app.js', 'askai.js', 'exercises.js',
