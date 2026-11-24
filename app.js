@@ -9,6 +9,9 @@ const IMG_BASE = 'https://raw.githubusercontent.com/yuhonas/free-exercise-db/mai
 const STORAGE_KEY = 'muscu-tracker:v1';
 const LIST_PAGE = 60;
 
+// Shown at the bottom of Settings; bump it with APP_CACHE in sw.js on every release
+const APP_VERSION = '1.11.0';
+
 const GROUPS = [
   ['chest', 'Chest'], ['back', 'Back'], ['shoulders', 'Shoulders'], ['biceps', 'Biceps'],
   ['triceps', 'Triceps'], ['forearms', 'Forearms'], ['abs', 'Abs'], ['quads', 'Quads'],
@@ -134,9 +137,7 @@ const ui = {
   draft: null,          // copy of a finished workout being edited (or a past workout being logged)
   libQuery: '',
   libGroup: null,       // a group key, 'fav', or null for all
-  libEquip: null,       // an EQUIP_FILTERS key, or null for all
-  coachAll: false,      // coach card expanded
-  libLimit: LIST_PAGE,
+  libEquip: null,       // an EQUIP_FILTERS key, or null for all  libLimit: LIST_PAGE,
   modals: [],
   restDoneUntil: 0,
 };
@@ -500,8 +501,6 @@ function viewWorkout() {
     const last = state.sessions[state.sessions.length - 1];
     return `<section class="stack">
       <button class="btn primary big block" data-action="startEmpty">Start an empty workout</button>
-      <h2 class="section-title">Coach</h2>
-      ${coachCard()}
       <h2 class="section-title">My programs</h2>
       ${tpls || emptyPrograms()}
       ${last ? `<h2 class="section-title">Last workout</h2>${historyCard(last)}` : ''}
@@ -735,6 +734,7 @@ function historyCard(s) {
 function viewHistory() {
   const list = state.sessions.slice().reverse().map(historyCard).join('');
   return `<section class="stack">
+    ${state.sessions.length ? '<button class="btn primary block" data-action="askAI">✨ Ask your AI</button>' : ''}
     <button class="btn block" data-action="logPastSession">+ Log a past workout</button>
     ${list || '<div class="card empty"><p class="muted">No finished workouts yet. They will show up here.</p></div>'}
   </section>`;
@@ -849,6 +849,7 @@ function viewSettings() {
       <button class="btn block" data-action="importData">Import a backup</button>
     </div>
     <p class="muted small center">Exercises and images: <a href="https://github.com/yuhonas/free-exercise-db" target="_blank" rel="noopener">free-exercise-db</a> (public domain). · <a href="privacy.html">Privacy policy</a></p>
+    <p class="muted tiny center">Gym Tracker v${APP_VERSION}</p>
   </section>`;
 }
 
@@ -955,6 +956,81 @@ function delta(cur, prev) {
   return cur > prev
     ? `<span class="delta up">↑ ${pct}%</span>`
     : `<span class="delta down">↓ ${Math.abs(pct)}%</span>`;
+}
+
+/* ---------- Muscle map (post-workout) ---------- */
+
+// Body outline (viewBox 0 0 80 170), then muscles as ellipses on top: [group, cx, cy, rx, ry, rotation]
+const BODY_OUTLINE = `<circle cx="40" cy="11" r="8.5"/>
+  <path d="M36 19h8v4c7 1 15 3 18 8 3 4 3 9 4 14l2 14c1 6 3 12 3 19 0 2-4 2-4 0l-4-17-3-12c-1 5-1 10 0 15
+    1 4 2 9 2 15 0 13-2 26-2 38 0 9-1 18-2 26h-7l-1-28-2-27h-2l-2 27-1 28h-7c-1-8-2-17-2-26 0-12-2-25-2-38
+    0-6 1-11 2-15 1-5 1-10 0-15l-3 12-4 17c0 2-4 2-4 0 0-7 2-13 3-19l2-14c1-5 1-10 4-14 3-5 11-7 18-8z"/>`;
+const BODY_FRONT = [
+  ['shoulders', 23.5, 30, 5.5, 6.5, -20], ['shoulders', 56.5, 30, 5.5, 6.5, 20],
+  ['chest', 33.5, 35, 7, 5.5, 0], ['chest', 46.5, 35, 7, 5.5, 0],
+  ['biceps', 17.5, 45, 3.6, 8, 15], ['biceps', 62.5, 45, 3.6, 8, -15],
+  ['forearms', 13.5, 63, 3.2, 9, 15], ['forearms', 66.5, 63, 3.2, 9, -15],
+  ['abs', 40, 55, 6.5, 13, 0],
+  ['quads', 33.5, 97, 6, 17, 4], ['quads', 46.5, 97, 6, 17, -4],
+  ['calves', 32.5, 135, 3.8, 11, 0], ['calves', 47.5, 135, 3.8, 11, 0],
+];
+const BODY_BACK = [
+  ['shoulders', 23.5, 30, 5.5, 6.5, -20], ['shoulders', 56.5, 30, 5.5, 6.5, 20],
+  ['back', 40, 44, 12.5, 18, 0],
+  ['triceps', 17.5, 45, 3.6, 8, 15], ['triceps', 62.5, 45, 3.6, 8, -15],
+  ['forearms', 13.5, 63, 3.2, 9, 15], ['forearms', 66.5, 63, 3.2, 9, -15],
+  ['glutes', 34, 80, 6.5, 6.5, 0], ['glutes', 46, 80, 6.5, 6.5, 0],
+  ['hamstrings', 33.5, 103, 5.5, 13, 4], ['hamstrings', 46.5, 103, 5.5, 13, -4],
+  ['calves', 32.5, 134, 4.2, 11, 0], ['calves', 47.5, 134, 4.2, 11, 0],
+];
+
+function setsPerGroup(s) {
+  const out = {};
+  for (const e of s.exercises) {
+    const g = getEx(e.exId, e.name).group;
+    out[g] = (out[g] || 0) + e.sets.length;
+  }
+  return out;
+}
+
+// "Push day", "Leg day"… from where the sets went
+function workoutKind(per) {
+  const sum = gs => gs.reduce((n, g) => n + (per[g] || 0), 0);
+  const total = Object.values(per).reduce((a, b) => a + b, 0) || 1;
+  const push = sum(['chest', 'shoulders', 'triceps']), pull = sum(['back', 'biceps', 'forearms']);
+  const legs = sum(['quads', 'hamstrings', 'glutes', 'calves']);
+  if (sum(['cardio']) / total >= 0.6) return 'Cardio';
+  if (legs / total >= 0.6) return 'Leg day';
+  if (sum(['biceps', 'triceps', 'forearms']) / total >= 0.6) return 'Arm day';
+  if (push / total >= 0.6) return 'Push day';
+  if (pull / total >= 0.6) return 'Pull day';
+  if (legs / total < 0.2 && (push + pull) / total >= 0.6) return 'Upper body';
+  return 'Full body';
+}
+
+function bodySvg(regions, per, label) {
+  // Darker for more sets: a light touch, solid work, a big focus
+  const level = n => (!n ? 0 : n <= 3 ? 1 : n <= 7 ? 2 : 3);
+  return `<figure class="body-view">
+    <svg viewBox="0 0 80 170" role="img" aria-label="${label}">
+      <g class="body-outline">${BODY_OUTLINE}</g>
+      ${regions.map(([g, cx, cy, rx, ry, rot]) =>
+        `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" transform="rotate(${rot} ${cx} ${cy})" class="body-part lv${level(per[g])}"/>`).join('')}
+    </svg>
+    <figcaption class="muted tiny">${label}</figcaption>
+  </figure>`;
+}
+
+function muscleMapHtml(s, justFinished) {
+  const per = setsPerGroup(s);
+  const worked = GROUPS.filter(([g]) => per[g]).sort((a, b) => per[b[0]] - per[a[0]]);
+  return `<div class="muscle-map">
+    <div class="muscle-title">${workoutKind(per)}${justFinished ? ' done 💪' : ''}</div>
+    <div class="muscle-sub muted small">${worked.slice(0, 4).map(([, l]) => l).join(' · ')}</div>
+    <div class="body-pair">${bodySvg(BODY_FRONT, per, 'Front')}${bodySvg(BODY_BACK, per, 'Back')}</div>
+    <div class="chips wrap muscle-chips">${worked.map(([g, l]) =>
+      `<span class="chip static">${l} <b>${per[g]}</b></span>`).join('')}</div>
+  </div>`;
 }
 
 function summaryHtml(s) {
@@ -1111,10 +1187,12 @@ const MODALS = {
     const s = state.sessions.find(x => x.id === m.id);
     if (!s) return '';
     return `<div class="sheet">
-      <div class="sheet-head"><h2>${m.justFinished ? 'Workout complete 💪' : esc(s.name)}</h2>${closeBtn}</div>
+      <div class="sheet-head"><h2>${m.justFinished ? 'Workout complete' : esc(s.name)}</h2>${closeBtn}</div>
       <p class="muted small">${m.justFinished ? `${esc(s.name)} · ` : ''}${fmtDateLong(s.start)} · ${fmtClock(s.start)}</p>
       <div class="stack">
+        ${muscleMapHtml(s, m.justFinished)}
         ${summaryHtml(s)}
+        <button class="btn primary block" data-action="askAI" data-id="${s.id}">✨ Ask your AI about this workout</button>
         ${s.exercises.map(e => {
           const mode = exMode(e.exId);
           const before = lastPerf(e.exId, s.start);
@@ -1507,7 +1585,6 @@ const actions = {
 
   // Library
   libGroup(d) { ui.libGroup = d.g || null; ui.libLimit = LIST_PAGE; render(); },
-  coachToggle() { ui.coachAll = !ui.coachAll; render(); },
   libEquip(d) { ui.libEquip = d.e || null; ui.libLimit = LIST_PAGE; render(); },
   libMore() { ui.libLimit += LIST_PAGE; renderLibList(); },
   showExercise(d) { openModal({ type: 'exercise', id: d.id }); },

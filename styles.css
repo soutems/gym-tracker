@@ -460,14 +460,54 @@ textarea.in { min-height: 110px; resize: vertical; }
 .records ul { margin: 6px 0 0; padding-left: 18px; }
 .records li + li { margin-top: 4px; }
 
-/* Coach */
-.coach { display: flex; flex-direction: column; gap: 12px; }
-.coach-item { display: flex; gap: 10px; align-items: flex-start; padding-left: 10px; border-left: 3px solid var(--accent); }
-.coach-item.warn { border-left-color: var(--star); }
-.coach-item.good { border-left-color: var(--ok); }
-.coach-icon { font-size: 20px; line-height: 1.2; }
-.coach-title { font-weight: 600; }
-.coach .link { align-self: flex-start; }
+/* Muscle map (post-workout) */
+.muscle-map { text-align: center; }
+.muscle-title { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; }
+.body-pair { display: flex; justify-content: center; gap: 18px; margin: 12px 0 6px; }
+.body-view { margin: 0; }
+.body-view svg { width: 112px; height: auto; display: block; }
+.body-outline { fill: color-mix(in srgb, var(--text) 12%, var(--surface)); }
+.body-part { fill: color-mix(in srgb, var(--text) 22%, var(--surface)); }
+.body-part.lv1 { fill: color-mix(in srgb, var(--accent) 45%, var(--surface)); }
+.body-part.lv2 { fill: color-mix(in srgb, var(--accent) 75%, var(--surface)); }
+.body-part.lv3 { fill: var(--accent); }
+.muscle-chips { justify-content: center; }
+.muscle-chips b { margin-left: 2px; }
+
+/* Ask your AI */
+.ai-choices { display: flex; flex-direction: column; gap: 8px; }
+.ai-choice {
+  appearance: none; text-align: left; cursor: pointer; font: inherit; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+}
+.ai-choice.active { border-color: var(--accent); background: var(--accent-bg); }
+.ai-choice small { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+/* Splash screen, shown for a moment at launch */
+#splash {
+  position: fixed; inset: 0; z-index: 100;
+  background: var(--bg); color: var(--text);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  transition: opacity 0.35s ease;
+}
+#splash.gone { opacity: 0; pointer-events: none; }
+.splash-art { width: 150px; height: auto; margin-bottom: 14px; overflow: visible; }
+.splash-art .bar { fill: var(--muted); }
+.splash-art .plate { fill: var(--accent); }
+.splash-art .plate.small { opacity: 0.7; }
+.splash-shadow { fill: var(--text); opacity: 0.12; transform-origin: 80px 128px; animation: splash-shadow 1.1s ease-in-out infinite; }
+.splash-bar { animation: splash-lift 1.1s ease-in-out infinite; }
+.splash-spark path { stroke: var(--accent); stroke-width: 3; stroke-linecap: round; fill: none; opacity: 0; animation: splash-spark 1.1s ease-in-out infinite; }
+.splash-name { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; animation: splash-in 0.6s ease-out both; }
+.splash-sub { color: var(--muted); font-size: 15px; animation: splash-in 0.6s 0.15s ease-out both; }
+@keyframes splash-lift { 0%, 100% { transform: translateY(28px); } 50% { transform: translateY(0); } }
+@keyframes splash-shadow { 0%, 100% { transform: scaleX(1); opacity: 0.16; } 50% { transform: scaleX(0.7); opacity: 0.07; } }
+@keyframes splash-spark { 0%, 35%, 100% { opacity: 0; } 50%, 60% { opacity: 1; } }
+@keyframes splash-in { from { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: reduce) {
+  .splash-bar, .splash-shadow, .splash-spark path, .splash-name, .splash-sub { animation: none; }
+  .splash-spark path { opacity: 1; }
+}
 
 /* Settings */
 .theme-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }

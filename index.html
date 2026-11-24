@@ -18,11 +18,30 @@
       var t = s.theme || 'auto';
       if (t === 'auto') t = matchMedia('(prefers-color-scheme: light)').matches ? 'daylight' : 'midnight';
       document.documentElement.dataset.theme = t;
+      document.documentElement.dataset.style = s.style || 'classic';
     } catch (e) {}
   </script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <div id="splash" aria-hidden="true">
+    <svg class="splash-art" viewBox="0 0 160 140">
+      <ellipse class="splash-shadow" cx="80" cy="128" rx="46" ry="6"/>
+      <g class="splash-bar">
+        <rect x="14" y="52" width="132" height="6" rx="3" class="bar"/>
+        <rect x="22" y="30" width="14" height="50" rx="4" class="plate"/>
+        <rect x="38" y="38" width="10" height="34" rx="3" class="plate small"/>
+        <rect x="124" y="30" width="14" height="50" rx="4" class="plate"/>
+        <rect x="112" y="38" width="10" height="34" rx="3" class="plate small"/>
+      </g>
+      <g class="splash-spark">
+        <path d="M80 10v10M62 16l5 8M98 16l-5 8"/>
+      </g>
+    </svg>
+    <div class="splash-name">Gym Tracker</div>
+    <div class="splash-sub">Lift. Log. Repeat.</div>
+  </div>
+
   <header id="topbar">
     <div class="topbar-inner">
       <h1 id="title">Workout</h1>
@@ -73,10 +92,16 @@
 
   <script src="exercises.js"></script>
   <script src="sync.js"></script>
-  <script src="coach.js"></script>
   <script src="app.js"></script>
+  <script src="askai.js"></script>
   <script>
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+    // The splash stays a moment, just for the show, then fades out
+    setTimeout(() => {
+      const splash = document.getElementById('splash');
+      splash.classList.add('gone');
+      setTimeout(() => splash.remove(), 400);
+    }, 1300);
   </script>
 </body>
 </html>
