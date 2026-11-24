@@ -2,7 +2,7 @@
 // background (a new version shows up on the next launch). Exercise images are
 // cached the first time they are seen.
 // Same number as APP_VERSION in app.js
-const APP_CACHE = 'gym-app-1.11.0';
+const APP_CACHE = 'gym-app-1.11.1';
 const IMG_CACHE = 'gym-img-v1';
 const APP_FILES = [
   './', 'index.html', 'styles.css', 'sync.js', 'app.js', 'askai.js', 'exercises.js',
@@ -10,7 +10,11 @@ const APP_FILES = [
 ];
 
 self.addEventListener('install', ev => {
-  ev.waitUntil(caches.open(APP_CACHE).then(c => c.addAll(APP_FILES)).then(() => self.skipWaiting()));
+  // cache: 'reload' skips the browser's HTTP cache (GitHub Pages keeps files 10 min),
+  // so a new version is never installed with leftover files from the previous one
+  ev.waitUntil(caches.open(APP_CACHE)
+    .then(c => c.addAll(APP_FILES.map(u => new Request(u, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', ev => {
@@ -30,7 +34,7 @@ self.addEventListener('fetch', ev => {
     // Stale-while-revalidate, ignoring ?query so "./?x" still hits the cache
     ev.respondWith(caches.open(APP_CACHE).then(async cache => {
       const cached = await cache.match(req, { ignoreSearch: true });
-      const fresh = fetch(req)
+      const fresh = fetch(req.url, { cache: 'no-cache' })
         .then(res => { if (res.ok) cache.put(req, res.clone()); return res; })
         .catch(() => cached);
       return cached || fresh;

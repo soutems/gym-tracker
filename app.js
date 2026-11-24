@@ -10,7 +10,7 @@ const STORAGE_KEY = 'muscu-tracker:v1';
 const LIST_PAGE = 60;
 
 // Shown at the bottom of Settings; bump it with APP_CACHE in sw.js on every release
-const APP_VERSION = '1.11.0';
+const APP_VERSION = '1.11.1';
 
 const GROUPS = [
   ['chest', 'Chest'], ['back', 'Back'], ['shoulders', 'Shoulders'], ['biceps', 'Biceps'],
