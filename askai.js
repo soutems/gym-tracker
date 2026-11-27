@@ -35,8 +35,16 @@ const FR_EQUIP = {
 
 const frDate = ts => new Date(ts).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 const frNum = n => Math.round(n).toLocaleString('fr-FR');
-const frSet = (s, mode) => mode === 'time' ? fmtTime(s.t)
-  : s.w ? `${fmtW(s.w)} kg × ${s.r ?? 0}` : `${s.r ?? 0} reps (poids du corps)`;
+const frDec = n => fmtW(n).replace('.', ',');
+function frSet(s, mode) {
+  if (mode === 'time') return s.w ? `${fmtW(s.w)} kg × ${fmtTime(s.t)}` : fmtTime(s.t);
+  if (mode === 'cardio') {
+    const km = setKm(s);
+    return [fmtTime(s.t), s.sp ? `à ${frDec(s.sp)} km/h` : '', s.inc ? `inclinaison ${frDec(s.inc)} %` : '',
+      km ? `(≈ ${km.toFixed(2).replace('.', ',')} km)` : ''].filter(Boolean).join(' ');
+  }
+  return s.w ? `${fmtW(s.w)} kg × ${s.r ?? 0}` : `${s.r ?? 0} reps (poids du corps)`;
+}
 
 function aiSessions(period) {
   const all = state.sessions;
@@ -72,7 +80,7 @@ function aiExport(sessions, periodLabel) {
   L.push('# Historique d\'entraînement (Gym Tracker)', '');
   L.push(`Période : ${periodLabel}, du ${frDate(first.start)} au ${frDate(last.start)}`);
   L.push(`Exporté le : ${frDate(Date.now())}`);
-  L.push('Unités : charges en kg, durées en minutes:secondes. « 60 kg × 8 » = 8 répétitions à 60 kg. 🏆 = record personnel battu ce jour-là.');
+  L.push('Unités : charges en kg, durées en minutes:secondes. « 60 kg × 8 » = 8 répétitions à 60 kg. « 20 kg × 1:00 » = une minute avec 20 kg. Cardio : vitesse en km/h, inclinaison en %. 🏆 = record personnel battu ce jour-là.');
   L.push('Note : sur les exercices « assisté(e) », le poids est l\'aide de la machine (moins = plus difficile).', '');
 
   L.push('## Résumé');

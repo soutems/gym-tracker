@@ -258,13 +258,16 @@ textarea.in { min-height: 110px; resize: vertical; }
   grid-template-columns: 32px minmax(0, 1fr) 66px 58px 44px;
   gap: 6px; align-items: center;
 }
-.set-grid.time { grid-template-columns: 32px minmax(0, 1fr) 76px 44px 44px; }
+.set-grid.m-time { grid-template-columns: 28px minmax(0, 1fr) 50px 62px 40px 40px; gap: 5px; }
+.set-grid.m-time .chrono-btn { width: 100%; }
+.set-grid.m-cardio { grid-template-columns: 28px minmax(0, 1fr) 62px 48px 48px 40px; gap: 5px; }
+.set-head.m-cardio, .set-head.m-time { font-size: 11px; }
 .edit-grid {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr) minmax(0, 1fr) 44px;
   gap: 6px; align-items: center;
 }
-.edit-grid.time { grid-template-columns: 32px minmax(0, 1fr) 44px; }
+.edit-grid.m-cardio { grid-template-columns: 32px repeat(3, minmax(0, 1fr)) 44px; }
 .edit-grid .set-num { display: grid; place-items: center; cursor: default; }
 
 .when-btn {
@@ -459,6 +462,49 @@ textarea.in { min-height: 110px; resize: vertical; }
 .records { border-color: var(--star); }
 .records ul { margin: 6px 0 0; padding-left: 18px; }
 .records li + li { margin-top: 4px; }
+
+/* History calendar */
+.cal { padding: 12px 10px 10px; touch-action: pan-y; user-select: none; -webkit-user-select: none; overflow: hidden; }
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cal-head h2 { margin: 0; font-size: 18px; }
+.cal-head .icon-btn { font-size: 24px; width: 40px; height: 40px; }
+.cal-head .icon-btn:disabled { opacity: 0.25; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-days span { text-align: center; font-size: 12px; font-weight: 700; color: var(--muted); padding-bottom: 4px; }
+.cal-cell {
+  position: relative; aspect-ratio: 1; display: grid; place-items: center;
+  border: 0; background: none; padding: 0; font: inherit; color: var(--text);
+}
+.cal-cell.pad { visibility: hidden; }
+.cal-cell.future .cal-num { color: var(--muted); opacity: 0.5; }
+.cal-num {
+  width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 15px; font-variant-numeric: tabular-nums;
+}
+.cal-cell.today .cal-num { box-shadow: inset 0 0 0 2px var(--accent); font-weight: 700; }
+.cal-cell.on { cursor: pointer; }
+.cal-cell.on .cal-num { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.cal-cell.on.today .cal-num { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
+.cal-cell.on:active .cal-num { transform: scale(0.92); }
+.cal-pr {
+  position: absolute; top: 0; right: 2px; font-size: 13px; line-height: 1; color: var(--star);
+  text-shadow: 0 0 2px var(--surface), 0 0 2px var(--surface);
+}
+.cal-count {
+  position: absolute; bottom: 0; right: 2px; min-width: 16px; height: 16px; border-radius: 8px;
+  background: var(--text); color: var(--surface); font-size: 11px; font-weight: 700; line-height: 16px; text-align: center;
+}
+.cal-legend { display: flex; gap: 16px; justify-content: center; margin-top: 8px; }
+.cal-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.cal-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.cal-pr-k { color: var(--star); font-weight: 400; }
+.slide-next { animation: cal-next 0.25s ease-out; }
+.slide-prev { animation: cal-prev 0.25s ease-out; }
+@keyframes cal-next { from { transform: translateX(40px); opacity: 0; } }
+@keyframes cal-prev { from { transform: translateX(-40px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .slide-next, .slide-prev { animation: none; } }
+.month-tiles .tile strong { font-size: 18px; }
+.month-tiles .delta { font-size: 11px; }
 
 /* Muscle map (post-workout) */
 /* Neon style: always a dark stage, whatever the theme, so the glow shows */

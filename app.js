@@ -10,7 +10,7 @@ const STORAGE_KEY = 'muscu-tracker:v1';
 const LIST_PAGE = 60;
 
 // Shown at the bottom of Settings; bump it with APP_CACHE in sw.js on every release
-const APP_VERSION = '1.12.0';
+const APP_VERSION = '1.14.0';
 
 const GROUPS = [
   ['chest', 'Chest'], ['back', 'Back'], ['shoulders', 'Shoulders'], ['biceps', 'Biceps'],
@@ -137,7 +137,10 @@ const ui = {
   draft: null,          // copy of a finished workout being edited (or a past workout being logged)
   libQuery: '',
   libGroup: null,       // a group key, 'fav', or null for all
-  libEquip: null,       // an EQUIP_FILTERS key, or null for all  libLimit: LIST_PAGE,
+  libEquip: null,       // an EQUIP_FILTERS key, or null for all
+  libLimit: LIST_PAGE,
+  calMonth: null,       // month shown in History, as year * 12 + month; null = this month
+  calSlide: '',         // 'next' or 'prev' right after a month change, for the slide-in
   modals: [],
   restDoneUntil: 0,
 };
@@ -181,7 +184,15 @@ if (lightQuery.addEventListener) lightQuery.addEventListener('change', applyThem
 
 let LIB = new Map();
 
+// How a set is logged (the weight is optional in the first two):
+//   reps    weight × reps
+//   time    weight × duration (planks, carries, weighted holds…)
+//   cardio  duration, speed (km/h), incline (%)
+const MODES = [['reps', 'Weight × reps'], ['time', 'Weight × time'], ['cardio', 'Cardio']];
+const CARDIO_MACHINE = /treadmill|walk|run|jog|bicycl|bike|cycling|\browing|elliptical|stair|step ?mill|climb/i;
+
 function guessMode(e) {
+  if (e.category === 'cardio' && CARDIO_MACHINE.test(e.name)) return 'cardio';
   if (e.category === 'cardio' || e.category === 'stretching') return 'time';
   if (/plank|hold|wall sit|isometric/i.test(e.name)) return 'time';
   return 'reps';
@@ -214,7 +225,10 @@ function getEx(id, fallbackName) {
     equipment: '', instructions: [], images: [], defaultMode: 'reps', custom: true,
   };
 }
-const exMode = id => (state.exerciseSettings[id] && state.exerciseSettings[id].mode) || getEx(id).defaultMode;
+const exMode = id => {
+  const m = state.exerciseSettings[id] && state.exerciseSettings[id].mode;
+  return MODES.some(x => x[0] === m) ? m : getEx(id).defaultMode;
+};
 const exSetting = id => (state.exerciseSettings[id] = state.exerciseSettings[id] || {});
 const isFav = id => state.favorites.includes(id);
 
@@ -294,20 +308,37 @@ function fromInputs(date, time) {
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+// Cardio distance in km, when the speed is known
+const setKm = s => (s.sp && s.t ? (s.sp * s.t) / 3600 : null);
+const fmtKm = km => `${km.toFixed(km < 10 ? 2 : 1)} km`;
+
 function setShort(s, mode) {
-  if (mode === 'time') return fmtTime(s.t);
+  if (mode === 'time') return s.w ? `${fmtW(s.w)}kg×${fmtTime(s.t)}` : fmtTime(s.t);
+  if (mode === 'cardio') return fmtTime(s.t) + (s.sp ? ` @${fmtW(s.sp)}` : '');
   return s.w ? `${fmtW(s.w)}kg×${s.r ?? 0}` : `${s.r ?? 0} reps`;
 }
 function setLong(s, mode) {
-  if (mode === 'time') return fmtTime(s.t);
+  if (mode === 'time') return s.w ? `${fmtW(s.w)} kg × ${fmtTime(s.t)}` : fmtTime(s.t);
+  if (mode === 'cardio') {
+    return [fmtTime(s.t), s.sp ? `${fmtW(s.sp)} km/h` : '', s.inc ? `${fmtW(s.inc)} % incline` : '', setKm(s) ? `≈ ${fmtKm(setKm(s))}` : '']
+      .filter(Boolean).join(' · ');
+  }
   return s.w ? `${fmtW(s.w)} kg × ${s.r ?? 0}` : `${s.r ?? 0} reps`;
+}
+
+// The fields of a set worth keeping in history (speed and incline only when entered)
+function keepSet(s) {
+  const out = { w: s.w ?? null, r: s.r ?? null, t: s.t ?? null };
+  if (s.sp != null) out.sp = s.sp;
+  if (s.inc != null) out.inc = s.inc;
+  return out;
 }
 
 function summarizeSets(sets, mode) {
   if (!sets.length) return '';
-  if (mode === 'time') {
-    const ts = sets.map(s => fmtTime(s.t));
-    return ts.every(t => t === ts[0]) ? `${sets.length} × ${ts[0]}` : ts.join(' · ');
+  if (mode === 'time' || mode === 'cardio') {
+    const xs = sets.map(s => setShort(s, mode));
+    return xs.every(x => x === xs[0]) ? `${sets.length} × ${xs[0]}` : xs.join(' · ');
   }
   const first = sets[0];
   if (sets.every(s => s.w === first.w && s.r === first.r)) {
@@ -349,12 +380,16 @@ function exHistory(exId) {
 
 /* ---------- Personal records ---------- */
 
-// Heavier weight wins; at equal weight, more reps wins. Duration: longer wins.
+// Heavier weight wins; at equal weight, more reps (or a longer time) wins.
+// Cardio: longer distance wins (longer time when a speed is missing).
 function setBeats(s, best, mode) {
-  if (mode === 'time') return (s.t || 0) > (best.t || 0);
+  if (mode === 'cardio') {
+    const a = setKm(s), b = setKm(best);
+    return a != null && b != null ? a > b : (s.t || 0) > (best.t || 0);
+  }
   const w = s.w || 0, bw = best.w || 0;
   if (w !== bw) return w > bw;
-  return (s.r || 0) > (best.r || 0);
+  return mode === 'time' ? (s.t || 0) > (best.t || 0) : (s.r || 0) > (best.r || 0);
 }
 function bestOf(sets, mode, best = null) {
   for (const s of sets) if (!best || setBeats(s, best, mode)) best = s;
@@ -552,9 +587,10 @@ function exerciseCard(e, i, prs) {
   const ex = getEx(e.exId, e.name);
   const mode = exMode(e.exId);
   const last = lastPerf(e.exId, state.active.start);
-  const head = mode === 'time'
-    ? '<span>Set</span><span>Previous</span><span>Time</span><span>Timer</span><span>✓</span>'
-    : '<span>Set</span><span>Previous</span><span>kg</span><span>Reps</span><span>✓</span>';
+  const cols = {
+    time: ['kg', 'Time', ''], cardio: ['Time', 'km/h', 'Incl %'],
+  }[mode] || ['kg', 'Reps'];
+  const head = `<span>Set</span><span>Previous</span>${cols.map(c => `<span>${c}</span>`).join('')}<span>✓</span>`;
   const rows = e.sets.map((s, j) => setRow(e, s, i, j, mode, last, prs.has(`${i}:${j}`))).join('');
   return `<div class="card">
     <div class="ex-head">
@@ -564,7 +600,7 @@ function exerciseCard(e, i, prs) {
     <div class="last">${e.target ? `Target: <b>${esc(e.target)}</b> · ` : ''}${last
       ? `Last time (${fmtDate(last.date)}): <b>${esc(summarizeSets(last.sets, mode))}</b>`
       : 'First time doing this exercise'}</div>
-    <div class="set-grid ${mode === 'time' ? 'time' : ''} set-head">${head}</div>
+    <div class="set-grid m-${mode} set-head">${head}</div>
     ${rows}
     <div class="ex-foot">
       <button class="btn small" data-action="addSet" data-i="${i}">+ Add set</button>
@@ -578,16 +614,20 @@ function setRow(e, s, i, j, mode, last, isPR) {
   const prevTxt = last && last.sets[j] ? setShort(last.sets[j], mode) : '–';
   const at = `data-i="${i}" data-j="${j}"`;
   let inputs;
+  const timeIn = `<input class="in" inputmode="numeric" data-field="t" ${at} value="${s.t != null ? fmtTime(s.t) : ''}" placeholder="${p && p.t ? fmtTime(p.t) : '0:00'}">`;
+  const numIn = (f, mode) => `<input class="in" inputmode="${mode}" data-field="${f}" ${at} value="${s[f] != null ? fmtW(s[f]) : ''}" placeholder="${p && p[f] != null ? fmtW(p[f]) : '–'}">`;
   if (mode === 'time') {
     const c = state.active.chrono;
     const running = c && c.i === i && c.j === j;
-    inputs = `<input class="in" inputmode="numeric" data-field="t" ${at} value="${s.t != null ? fmtTime(s.t) : ''}" placeholder="${p ? fmtTime(p.t) : '0:00'}">
+    inputs = `${numIn('w', 'decimal')}${timeIn}
       <button class="icon-btn chrono-btn ${running ? 'running' : ''}" data-action="chrono" ${at} aria-label="Timer">${running ? '■' : '▶'}</button>`;
+  } else if (mode === 'cardio') {
+    inputs = timeIn + numIn('sp', 'decimal') + numIn('inc', 'decimal');
   } else {
     inputs = `<input class="in" inputmode="decimal" data-field="w" ${at} value="${s.w != null ? fmtW(s.w) : ''}" placeholder="${p && p.w != null ? fmtW(p.w) : '–'}">
       <input class="in" inputmode="numeric" data-field="r" ${at} value="${s.r != null ? s.r : ''}" placeholder="${p && p.r != null ? p.r : '–'}">`;
   }
-  return `<div class="set-grid ${mode === 'time' ? 'time' : ''} set-row ${s.done ? 'done' : ''}">
+  return `<div class="set-grid m-${mode} set-row ${s.done ? 'done' : ''}">
     <button class="set-num" data-action="setMenu" ${at} aria-label="Set ${j + 1}${isPR ? ', personal record' : ''}">${isPR ? '<span class="pr-badge" title="Personal record">🏆</span>' : j + 1}</button>
     <span class="prev">${esc(prevTxt)}</span>
     ${inputs}
@@ -630,8 +670,8 @@ function viewTemplateEditor(t) {
             <button data-action="tplSets" data-k="${k}" data-d="-1">−</button><span>${it.sets}</span><button data-action="tplSets" data-k="${k}" data-d="1">+</button>
           </div>
         </label>
-        <label><span>${exMode(it.exId) === 'time' ? 'Target time' : 'Target reps'}</span>
-          <input class="in" data-tfield="target" data-k="${k}" value="${esc(it.target || '')}" placeholder="${exMode(it.exId) === 'time' ? '0:45' : '8-12'}">
+        <label><span>${exMode(it.exId) === 'reps' ? 'Target reps' : 'Target time'}</span>
+          <input class="in" data-tfield="target" data-k="${k}" value="${esc(it.target || '')}" placeholder="${{ time: '0:45', cardio: '20:00' }[exMode(it.exId)] || '8-12'}">
         </label>
         <label><span>Rest</span>
           <button class="btn small" data-action="tplRest" data-k="${k}">${it.rest ? fmtTime(it.rest) : 'off'}</button>
@@ -731,14 +771,169 @@ function historyCard(s) {
   </div>`;
 }
 
-function viewHistory() {
-  const list = state.sessions.slice().reverse().map(historyCard).join('');
-  return `<section class="stack">
-    ${state.sessions.length ? '<button class="btn primary block" data-action="askAI">✨ Ask your AI</button>' : ''}
-    <button class="btn block" data-action="logPastSession">+ Log a past workout</button>
-    ${list || '<div class="card empty"><p class="muted">No finished workouts yet. They will show up here.</p></div>'}
-  </section>`;
+/* Calendar: one month per page, a mark on each workout day, the month's stats below */
+
+const monthIndex = ts => { const d = new Date(ts); return d.getFullYear() * 12 + d.getMonth(); };
+const dayKey = d => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+const calBounds = () => ({
+  min: state.sessions.length ? monthIndex(state.sessions[0].start) : monthIndex(Date.now()),
+  max: monthIndex(Date.now()),
+});
+
+function monthSessions(mi) {
+  return state.sessions.filter(s => monthIndex(s.start) === mi);
 }
+
+function monthStats(list) {
+  const days = new Set(), exercises = new Set();
+  let sets = 0, volume = 0, prs = 0, seconds = 0;
+  for (const s of list) {
+    days.add(dayKey(new Date(s.start)));
+    const st = sessionStats(s);
+    sets += st.sets; volume += st.volume; prs += st.prs; seconds += st.duration;
+    for (const e of s.exercises) exercises.add(e.exId);
+  }
+  return { workouts: list.length, days: days.size, sets, volume, prs, seconds, exercises: exercises.size };
+}
+
+// Weeks in a row (Monday to Sunday) with at least one workout, counted back from this week.
+// This week only breaks the streak once it is over.
+function weekStreak() {
+  const weekOf = ts => {
+    const d = new Date(ts);
+    return Math.floor((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 864e5 + 3) / 7); // 1970-01-01 was a Thursday
+  };
+  const weeks = new Set(state.sessions.map(s => weekOf(s.start)));
+  let w = weekOf(Date.now());
+  if (!weeks.has(w)) w--;
+  let n = 0;
+  while (weeks.has(w)) { n++; w--; }
+  return n;
+}
+
+function calendarHtml(mi) {
+  const year = Math.floor(mi / 12), month = mi % 12;
+  const first = new Date(year, month, 1);
+  const lead = (first.getDay() + 6) % 7; // Monday first
+  const count = new Date(year, month + 1, 0).getDate();
+  const byDay = {};
+  for (const s of monthSessions(mi)) (byDay[new Date(s.start).getDate()] ||= []).push(s);
+  const today = new Date();
+  const isThisMonth = today.getFullYear() === year && today.getMonth() === month;
+
+  let cells = '<span class="cal-cell pad"></span>'.repeat(lead);
+  for (let d = 1; d <= count; d++) {
+    const list = byDay[d];
+    const cls = ['cal-cell'];
+    if (isThisMonth && d === today.getDate()) cls.push('today');
+    if (isThisMonth && d > today.getDate()) cls.push('future');
+    if (!list) { cells += `<span class="${cls.join(' ')}"><span class="cal-num">${d}</span></span>`; continue; }
+    cls.push('on');
+    const pr = list.some(s => sessionStats(s).prs);
+    const label = `${fmtDate(list[0].start)}: ${list.map(s => s.name).join(', ')}`;
+    cells += `<button class="${cls.join(' ')}" data-action="calDay" data-d="${d}" aria-label="${esc(label)}">
+      <span class="cal-num">${d}</span>
+      ${list.length > 1 ? `<span class="cal-count">${list.length}</span>` : ''}
+      ${pr ? '<span class="cal-pr" aria-hidden="true">★</span>' : ''}
+    </button>`;
+  }
+  const { min, max } = calBounds();
+  const name = first.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  return `<div class="card cal" id="cal">
+    <div class="cal-head">
+      <button class="icon-btn" data-action="calMove" data-d="-1" ${mi <= min ? 'disabled' : ''} aria-label="Previous month">‹</button>
+      <h2>${name}</h2>
+      <button class="icon-btn" data-action="calMove" data-d="1" ${mi >= max ? 'disabled' : ''} aria-label="Next month">›</button>
+    </div>
+    <div class="cal-grid cal-days">${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(l => `<span>${l}</span>`).join('')}</div>
+    <div class="cal-grid ${ui.calSlide ? `slide-${ui.calSlide}` : ''}">${cells}</div>
+    <div class="cal-legend muted tiny"><span><i class="cal-dot"></i> Workout</span><span><b class="cal-pr-k">★</b> Record</span></div>
+  </div>`;
+}
+
+function monthStatsHtml(mi) {
+  const list = monthSessions(mi);
+  const st = monthStats(list);
+  const prev = monthStats(monthSessions(mi - 1));
+  const year = Math.floor(mi / 12), month = mi % 12;
+  const isThisMonth = mi === monthIndex(Date.now());
+  // Weeks covered so far: the full month, or up to today for the current one
+  const lastDay = isThisMonth ? new Date().getDate() : new Date(year, month + 1, 0).getDate();
+  const perWeek = st.workouts / Math.max(1, lastDay / 7);
+  const delta = (now, before) => {
+    if (!before || now === before) return '';
+    const d = now - before;
+    const prevName = new Date(year, month - 1, 1).toLocaleDateString('en-GB', { month: 'short' });
+    return `<span class="delta ${d > 0 ? 'up' : ''}">${d > 0 ? '+' : '−'}${fmtBig(Math.abs(d))} vs ${prevName}</span>`;
+  };
+  if (!st.workouts) {
+    return `<div class="card empty"><p class="muted">No workouts this month${isThisMonth ? ' yet. Time to lift!' : '.'}</p></div>`;
+  }
+  return `<div class="stack-tight">
+    <h2 class="section-title">${isThisMonth ? 'This month' : new Date(year, month, 1).toLocaleDateString('en-GB', { month: 'long' })} in numbers</h2>
+    <div class="tiles month-tiles">
+      <div class="tile"><strong>${st.workouts}</strong><small>${st.workouts > 1 ? 'workouts' : 'workout'}</small>${delta(st.workouts, prev.workouts)}</div>
+      <div class="tile"><strong>${perWeek.toFixed(1)}</strong><small>per week</small></div>
+      <div class="tile"><strong>${fmtHours(st.seconds)}</strong><small>trained</small></div>
+      <div class="tile"><strong>${fmtBig(st.sets)}</strong><small>sets</small>${delta(st.sets, prev.sets)}</div>
+      <div class="tile"><strong>${st.volume >= 10000 ? `${(st.volume / 1000).toFixed(1)} t` : `${fmtBig(st.volume)} kg`}</strong><small>lifted</small></div>
+      <div class="tile"><strong>${st.prs}</strong><small>${st.prs === 1 ? 'record' : 'records'}</small></div>
+    </div>
+    <p class="muted small" style="margin:2px 0 0">${plural(st.exercises, 'different exercise')} · ${plural(st.days, 'training day')}${isThisMonth ? ` · 🔥 ${plural(weekStreak(), 'week')} in a row` : ''}</p>
+  </div>`;
+}
+
+function fmtHours(seconds) {
+  const h = Math.floor(seconds / 3600), m = Math.round((seconds % 3600) / 60);
+  return h ? `${h}h${String(m).padStart(2, '0')}` : `${m} min`;
+}
+
+function viewHistory() {
+  if (!state.sessions.length) {
+    return `<section class="stack">
+      <button class="btn block" data-action="logPastSession">+ Log a past workout</button>
+      <div class="card empty"><p class="muted">No finished workouts yet. They will show up here.</p></div>
+    </section>`;
+  }
+  const { min, max } = calBounds();
+  const mi = Math.min(max, Math.max(min, ui.calMonth ?? max));
+  const list = monthSessions(mi).reverse().map(historyCard).join('');
+  const html = `<section class="stack">
+    <button class="btn primary block" data-action="askAI">✨ Ask your AI</button>
+    ${calendarHtml(mi)}
+    ${monthStatsHtml(mi)}
+    ${list ? `<h2 class="section-title">Workouts</h2>${list}` : ''}
+    <button class="btn block" data-action="logPastSession">+ Log a past workout</button>
+  </section>`;
+  ui.calSlide = '';
+  return html;
+}
+
+function calMove(step) {
+  const { min, max } = calBounds();
+  const cur = Math.min(max, Math.max(min, ui.calMonth ?? max));
+  const next = cur + step;
+  if (next < min || next > max) return;
+  ui.calMonth = next;
+  ui.calSlide = step > 0 ? 'next' : 'prev';
+  render();
+}
+
+// Swipe left / right on the calendar to change month
+let calTouch = null;
+document.addEventListener('touchstart', ev => {
+  calTouch = ev.target.closest('#cal') && ev.touches.length === 1
+    ? { x: ev.touches[0].clientX, y: ev.touches[0].clientY } : null;
+}, { passive: true });
+document.addEventListener('touchend', ev => {
+  if (!calTouch) return;
+  const t = ev.changedTouches[0];
+  const dx = t.clientX - calTouch.x, dy = t.clientY - calTouch.y;
+  calTouch = null;
+  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) calMove(dx < 0 ? 1 : -1);
+}, { passive: true });
+
+const daySessions = ts => { const k = dayKey(new Date(ts)); return state.sessions.filter(s => dayKey(new Date(s.start)) === k); };
 
 // Date, start time and duration fields, shared by the live workout and the editor
 function whenFields(start, duration) {
@@ -763,22 +958,22 @@ function viewSessionEditor(d) {
   const cards = d.exercises.map((e, i) => {
     const mode = exMode(e.exId);
     const at = j => `data-i="${i}" data-j="${j}"`;
-    const rows = e.sets.map((s, j) => `<div class="edit-grid ${mode === 'time' ? 'time' : ''} set-row">
+    const fields = { time: ['w', 't'], cardio: ['t', 'sp', 'inc'] }[mode] || ['w', 'r'];
+    const input = (s, j, f) => f === 't'
+      ? `<input class="in" inputmode="numeric" data-dfield="t" ${at(j)} value="${s.t != null ? fmtTime(s.t) : ''}" placeholder="0:00">`
+      : `<input class="in" inputmode="${f === 'r' ? 'numeric' : 'decimal'}" data-dfield="${f}" ${at(j)} value="${s[f] != null ? fmtW(s[f]) : ''}" placeholder="–">`;
+    const rows = e.sets.map((s, j) => `<div class="edit-grid m-${mode} set-row">
       <span class="set-num">${j + 1}</span>
-      ${mode === 'time'
-        ? `<input class="in" inputmode="numeric" data-dfield="t" ${at(j)} value="${s.t != null ? fmtTime(s.t) : ''}" placeholder="0:00">`
-        : `<input class="in" inputmode="decimal" data-dfield="w" ${at(j)} value="${s.w != null ? fmtW(s.w) : ''}" placeholder="–">
-           <input class="in" inputmode="numeric" data-dfield="r" ${at(j)} value="${s.r != null ? s.r : ''}" placeholder="–">`}
+      ${fields.map(f => input(s, j, f)).join('')}
       <button class="icon-btn" data-action="draftDelSet" ${at(j)} aria-label="Delete set ${j + 1}">✕</button>
     </div>`).join('');
+    const LABEL = { t: 'Time', w: 'kg', r: 'Reps', sp: 'km/h', inc: 'Incl %' };
     return `<div class="card">
       <div class="ex-head">
         <button class="ex-title" data-action="showExercise" data-id="${esc(e.exId)}">${esc(getEx(e.exId, e.name).name)}</button>
         <button class="icon-btn" data-action="draftExMenu" data-i="${i}" aria-label="Options">⋯</button>
       </div>
-      <div class="edit-grid ${mode === 'time' ? 'time' : ''} set-head">${mode === 'time'
-        ? '<span>Set</span><span>Time</span><span></span>'
-        : '<span>Set</span><span>kg</span><span>Reps</span><span></span>'}</div>
+      <div class="edit-grid m-${mode} set-head"><span>Set</span>${fields.map(f => `<span>${LABEL[f]}</span>`).join('')}<span></span></div>
       ${rows}
       <div class="ex-foot"><button class="btn small" data-action="draftAddSet" data-i="${i}">+ Add set</button></div>
     </div>`;
@@ -856,7 +1051,9 @@ function viewSettings() {
 /* ---------- Progress chart ---------- */
 
 function chartKind(exId) {
-  if (exMode(exId) === 'time') return 'time';
+  const mode = exMode(exId);
+  if (mode === 'time') return exHistory(exId).some(h => h.sets.some(s => s.w)) ? 'wtime' : 'time';
+  if (mode === 'cardio') return exHistory(exId).some(h => h.sets.some(s => s.sp)) ? 'cardio' : 'time';
   return exHistory(exId).some(h => h.sets.some(s => s.w)) ? 'weight' : 'bodyweight';
 }
 
@@ -874,6 +1071,17 @@ const METRICS = {
     ['best', 'Longest', sets => Math.max(...sets.map(s => s.t || 0)), v => fmtTime(v)],
     ['total', 'Total time', sets => sets.reduce((n, s) => n + (s.t || 0), 0), v => fmtTime(v)],
   ],
+  wtime: [
+    ['weight', 'Top weight', sets => Math.max(...sets.map(s => s.w || 0)), v => `${fmtW(v)} kg`],
+    ['best', 'Longest', sets => Math.max(...sets.map(s => s.t || 0)), v => fmtTime(v)],
+    ['total', 'Total time', sets => sets.reduce((n, s) => n + (s.t || 0), 0), v => fmtTime(v)],
+  ],
+  cardio: [
+    // Workouts logged without a speed have no distance: left off these two charts (null)
+    ['dist', 'Distance', sets => (sets.some(s => s.sp) ? sets.reduce((n, s) => n + (setKm(s) || 0), 0) : null), v => fmtKm(v)],
+    ['total', 'Time', sets => sets.reduce((n, s) => n + (s.t || 0), 0), v => fmtTime(v)],
+    ['speed', 'Top speed', sets => (sets.some(s => s.sp) ? Math.max(...sets.map(s => s.sp || 0)) : null), v => `${fmtW(v)} km/h`],
+  ],
 };
 
 function chartHtml(m) {
@@ -881,7 +1089,7 @@ function chartHtml(m) {
   const metrics = METRICS[kind];
   const metric = metrics.find(x => x[0] === m.metric) || metrics[0];
   const [, , calc, fmt] = metric;
-  const points = exHistory(m.id).slice(-24).map(h => ({ date: h.date, v: calc(h.sets) }));
+  const points = exHistory(m.id).map(h => ({ date: h.date, v: calc(h.sets) })).filter(p => p.v != null).slice(-24);
   const seg = `<div class="seg small-seg">${metrics.map(([k, label]) =>
     `<button class="${k === metric[0] ? 'active' : ''}" data-action="chartMetric" data-metric="${k}">${label}</button>`).join('')}</div>`;
   if (points.length < 2) {
@@ -1142,9 +1350,8 @@ const MODALS = {
         ${muscles}
         <div>
           <div class="muted small" style="margin-bottom:6px">Track this exercise by:</div>
-          <div class="seg">
-            <button class="${mode === 'reps' ? 'active' : ''}" data-action="setMode" data-id="${esc(m.id)}" data-mode="reps">Weight × reps</button>
-            <button class="${mode === 'time' ? 'active' : ''}" data-action="setMode" data-id="${esc(m.id)}" data-mode="time">Duration</button>
+          <div class="seg">${MODES.map(([k, label]) =>
+            `<button class="${mode === k ? 'active' : ''}" data-action="setMode" data-id="${esc(m.id)}" data-mode="${k}">${label}</button>`).join('')}
           </div>
         </div>
         <div>
@@ -1177,7 +1384,7 @@ const MODALS = {
           <select class="in left" id="cxEquip">${EQUIP_FILTERS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
         </label>
         <label class="field"><span>Track by</span>
-          <select class="in left" id="cxMode"><option value="reps">Weight × reps</option><option value="time">Duration</option></select>
+          <select class="in left" id="cxMode">${MODES.map(([k, label]) => `<option value="${k}">${label}</option>`).join('')}</select>
         </label>
         <label class="field"><span>Notes / cues (optional)</span><textarea class="in left" id="cxText"></textarea></label>
         <button class="btn primary block" data-action="saveCustom">Create exercise</button>
@@ -1225,6 +1432,14 @@ const MODALS = {
         <button class="btn block" data-action="saveAsTemplate" data-id="${s.id}">Create a program from this workout</button>
         <button class="btn danger-text block" data-action="deleteSession" data-id="${s.id}">Delete this workout</button>
       </div>
+    </div>`;
+  },
+  // A calendar day with more than one workout
+  calDay(m) {
+    const list = daySessions(m.ts);
+    return `<div class="sheet">
+      <div class="sheet-head"><h2>${fmtDateLong(m.ts)}</h2>${closeBtn}</div>
+      <div class="stack">${list.map(historyCard).join('')}</div>
     </div>`;
   },
 };
@@ -1325,7 +1540,7 @@ function finishSession() {
     .map(e => ({
       exId: e.exId,
       name: e.name,
-      sets: e.sets.filter(s => s.done).map(s => ({ w: s.w, r: s.r, t: s.t, rest: s.rest ?? null })),
+      sets: e.sets.filter(s => s.done).map(s => ({ ...keepSet(s), rest: s.rest ?? null })),
     }))
     .filter(e => e.sets.length);
   const end = a.duration != null ? a.start + a.duration * 1000 : Date.now();
@@ -1390,7 +1605,16 @@ const actions = {
     if (mode === 'time') {
       if (a.chrono && a.chrono.i === i && a.chrono.j === j) stopChrono();
       if (s.t == null && p) s.t = p.t;
+      if (s.w == null && p && p.w != null) s.w = p.w;
       if (!s.t) { toast('Enter a duration (or use the ▶ timer)'); return; }
+    } else if (mode === 'cardio') {
+      // Speed and incline are optional: carried over from last time only along with the time
+      if (s.t == null && p) {
+        s.t = p.t;
+        if (s.sp == null && p.sp != null) s.sp = p.sp;
+        if (s.inc == null && p.inc != null) s.inc = p.inc;
+      }
+      if (!s.t) { toast('Enter a duration'); return; }
     } else {
       if (s.r == null && p) s.r = p.r;
       if (s.w == null && p && p.w != null) s.w = p.w;
@@ -1409,7 +1633,7 @@ const actions = {
   addSet(d) {
     const e = A().exercises[+d.i];
     const prev = e.sets[e.sets.length - 1];
-    e.sets.push({ w: prev ? prev.w : null, r: prev ? prev.r : null, t: prev ? prev.t : null, done: false });
+    e.sets.push({ ...(prev ? keepSet(prev) : { w: null, r: null, t: null }), done: false });
     save();
     render();
   },
@@ -1695,6 +1919,15 @@ const actions = {
 
   // History
   openSession(d) { openModal({ type: 'session', id: d.id }); },
+  calMove(d) { calMove(+d.d); },
+  calDay(d) {
+    const { min, max } = calBounds();
+    const mi = Math.min(max, Math.max(min, ui.calMonth ?? max));
+    const ts = new Date(Math.floor(mi / 12), mi % 12, +d.d).getTime();
+    const list = daySessions(ts);
+    if (list.length === 1) openModal({ type: 'session', id: list[0].id });
+    else if (list.length) openModal({ type: 'calDay', ts });
+  },
   deleteSession(d) {
     confirmBox('Delete this workout?', 'It will disappear from your history and your “last time” numbers.', 'Delete', () => {
       state.sessions = state.sessions.filter(s => s.id !== d.id);
@@ -1728,7 +1961,7 @@ const actions = {
     ui.draft = {
       id: s.id, name: s.name, templateId: s.templateId, start: s.start,
       duration: Math.round((s.end - s.start) / 1000),
-      exercises: s.exercises.map(e => ({ exId: e.exId, name: e.name, sets: e.sets.map(x => ({ w: x.w, r: x.r, t: x.t, rest: x.rest })) })),
+      exercises: s.exercises.map(e => ({ exId: e.exId, name: e.name, sets: e.sets.map(x => ({ ...keepSet(x), rest: x.rest })) })),
     };
     ui.modals = [];
     ui.tab = 'history';
@@ -1756,7 +1989,7 @@ const actions = {
   draftAddSet(d) {
     const e = ui.draft.exercises[+d.i];
     const prev = e.sets[e.sets.length - 1];
-    e.sets.push({ w: prev ? prev.w : null, r: prev ? prev.r : null, t: prev ? prev.t : null });
+    e.sets.push(prev ? keepSet(prev) : { w: null, r: null, t: null });
     render();
   },
   draftDelSet(d) {
@@ -1795,8 +2028,8 @@ const actions = {
         const mode = exMode(e.exId);
         return {
           exId: e.exId, name: e.name,
-          sets: e.sets.filter(s => (mode === 'time' ? s.t : s.r != null))
-            .map(s => ({ w: s.w, r: s.r, t: s.t, rest: s.rest ?? null })),
+          sets: e.sets.filter(s => (mode === 'time' || mode === 'cardio' ? s.t : s.r != null))
+            .map(s => ({ ...keepSet(s), rest: s.rest ?? null })),
         };
       })
       .filter(e => e.sets.length);
@@ -1898,17 +2131,19 @@ document.addEventListener('input', ev => {
   }
   if (t.dataset.field && state.active) {
     const s = state.active.exercises[+t.dataset.i].sets[+t.dataset.j];
-    if (t.dataset.field === 'w') s.w = parseNum(t.value);
-    else if (t.dataset.field === 'r') s.r = parseIntOrNull(t.value);
-    else if (t.dataset.field === 't') s.t = parseTime(t.value);
+    const f = t.dataset.field;
+    if (f === 'w' || f === 'sp' || f === 'inc') s[f] = parseNum(t.value);
+    else if (f === 'r') s.r = parseIntOrNull(t.value);
+    else if (f === 't') s.t = parseTime(t.value);
     save();
     return;
   }
   if (t.dataset.dfield && ui.draft) {
     if (t.dataset.dfield === 'name') { ui.draft.name = t.value; return; }
     const s = ui.draft.exercises[+t.dataset.i].sets[+t.dataset.j];
-    if (t.dataset.dfield === 'w') s.w = parseNum(t.value);
-    else if (t.dataset.dfield === 'r') s.r = parseIntOrNull(t.value);
+    const f = t.dataset.dfield;
+    if (f === 'w' || f === 'sp' || f === 'inc') s[f] = parseNum(t.value);
+    else if (f === 'r') s.r = parseIntOrNull(t.value);
     else s.t = parseTime(t.value);
     return;
   }
@@ -1936,7 +2171,7 @@ document.addEventListener('change', ev => {
     const s = state.active.exercises[+t.dataset.i].sets[+t.dataset.j];
     t.value = s.t != null ? fmtTime(s.t) : '';
   }
-  if (t.dataset.dfield === 't' && ui.draft) {
+  if (t.dataset.dfield === 't' && ui.draft && t.dataset.i != null) {
     const s = ui.draft.exercises[+t.dataset.i].sets[+t.dataset.j];
     t.value = s.t != null ? fmtTime(s.t) : '';
   }
